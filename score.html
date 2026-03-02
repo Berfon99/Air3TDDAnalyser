@@ -147,7 +147,7 @@
 <header>
   <div>
     <div class="logo">Snowy TDD<span> Task Analyser</span></div>
-    <div class="tagline">powered by AIR³</div>
+    <div class="tagline"><a href="https://www.fly-air3.com/" target="_blank" style="color:inherit;text-decoration:none;cursor:pointer;transition:color 0.2s" onmouseover="this.style.color='#00d4ff'" onmouseout="this.style.color=''">powered by AIR³</a></div>
   </div>
   <a href="index.html" class="back-btn">← Back to Analyzer</a>
 </header>
@@ -266,6 +266,7 @@ function renderScores() {
             <th class="right">Computed XC Pts<br><span style="font-size:0.5rem;opacity:0.6">max 500 pts</span></th>
             <th class="right">Track Points</th>
             <th class="right">Total Score</th>
+            <th>XContest Link</th>
           </tr>
         </thead>
         <tbody>`;
@@ -275,9 +276,9 @@ function renderScores() {
       const xcPts    = parsePoints(p.xcPts);
       const submittedAt = p.submittedAt ? new Date(p.submittedAt).toLocaleString() : '';
 
-      // Col 1: XContest raw points + optional link
+      // Col 1: XContest raw points (no link here — link gets its own column)
       const xcCell = xcPts !== null
-        ? `<span class="pts-xc">${xcPts.toFixed(2)}</span>${p.xcUrl ? ` <a href="${p.xcUrl}" target="_blank" style="font-size:0.55rem;color:var(--accent);opacity:0.6;text-decoration:none">↗</a>` : ''}`
+        ? `<span class="pts-xc">${xcPts.toFixed(2)}</span>`
         : `<span class="pts-na">—</span>`;
 
       // Col 2: Computed XC pts via rule of 3 (best = 500)
@@ -311,6 +312,7 @@ function renderScores() {
         <td class="pts-cell">${computedCell}</td>
         <td class="pts-cell">${trackCell}</td>
         <td class="pts-cell">${totalCell}</td>
+        <td class="xc-link-cell">${p.xcUrl ? `<a href="${p.xcUrl}" target="_blank">View flight ↗</a>` : '<span class="pts-na">—</span>'}</td>
       </tr>`;
     });
 
