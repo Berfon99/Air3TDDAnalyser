@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ParaTrace · Task Analyzer</title>
+<title>Snowy TDD Task Analyser</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <style>
@@ -142,6 +142,23 @@
     font-size:9px; font-weight:bold; color:white; font-family:'Space Mono',monospace;
   }
   .empty-state { text-align:center; padding:0.8rem; color:rgba(200,223,240,0.3); font-size:0.65rem; }
+  .btn-submit {
+    flex:1; background:linear-gradient(135deg,#00cc44,#009933); color:#000;
+    font-family:'Space Mono',monospace; font-size:0.7rem; font-weight:700;
+    padding:0.75rem; border:none; border-radius:6px; cursor:pointer;
+    letter-spacing:0.05em; text-transform:uppercase; transition:all 0.2s;
+  }
+  .btn-submit:hover { filter:brightness(1.1); transform:translateY(-1px); }
+  .btn-submit:disabled { opacity:0.3; cursor:not-allowed; transform:none; }
+  .btn-score {
+    flex:1; background:rgba(68,136,255,0.15); color:#4488ff;
+    border:1px solid rgba(68,136,255,0.4); border-radius:6px;
+    font-family:'Space Mono',monospace; font-size:0.7rem; font-weight:700;
+    padding:0.75rem; text-align:center; text-decoration:none;
+    letter-spacing:0.05em; text-transform:uppercase; transition:all 0.2s;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .btn-score:hover { background:rgba(68,136,255,0.25); }
 
   /* Summary card */
   .summary-card {
@@ -172,8 +189,8 @@
 
 <header>
   <div>
-    <div class="logo">Para<span>Trace</span></div>
-    <div class="tagline">Task Analyzer · XCTask & IGC</div>
+    <div class="logo">Snowy TDD<span> Task Analyser</span></div>
+    <div class="tagline">powered by AIR³</div>
   </div>
 </header>
 
@@ -254,7 +271,7 @@
     </div>
 
     <div>
-      <div class="section-title">🏆 Snowy TDD Score</div>
+      <div class="section-title">🏆 TDD Score</div>
       <div class="score-panel">
         <div class="score-total" id="scoreTotal">—</div>
         <div class="score-label">points</div>
@@ -282,6 +299,13 @@
         </div>
       </div>
     </div>
+
+    <!-- Actions -->
+    <div style="display:flex;gap:0.5rem;">
+      <button class="btn btn-submit" id="submitBtn" disabled>📤 Submit</button>
+      <a href="score.html" class="btn btn-score">🏅 Scores</a>
+    </div>
+    <div id="submitMsg" style="font-size:0.62rem;display:none;padding:0.4rem 0.6rem;border-radius:5px;"></div>
 
   </div>
 
@@ -738,6 +762,43 @@ function updateSummary(trackPts) {
   } else {
     xcRow.style.display = 'none';
   }
+  updateSummaryButtons();
+}
+
+// ── SUBMIT ───────────────────────────────────────────────────────────────────
+function updateSummaryButtons() {
+  const card = document.getElementById('summaryCard');
+  document.getElementById('submitBtn').disabled = !card.classList.contains('visible');
+}
+
+document.getElementById('submitBtn').addEventListener('click', () => {
+  const name     = document.getElementById('summaryName').textContent.trim();
+  const date     = document.getElementById('summaryDate').textContent.trim();
+  const trackPts = document.getElementById('summaryTrackPts').textContent.trim();
+  const xcPtsEl  = document.getElementById('xcPts');
+  const xcPts    = xcPtsEl.textContent.trim() === '—' ? '' : xcPtsEl.textContent.trim();
+  const xcUrl    = document.getElementById('xcUrl').value.trim();
+
+  if (!name || name === '—') {
+    showSubmitMsg('No pilot name found. Load an IGC file first.', false); return;
+  }
+
+  // Key = pilot name (upsert — replaces previous entry for same pilot)
+  const key = 'paratrace_pilot_' + name.toLowerCase().replace(/\s+/g,'_');
+  const entry = { name, date, trackPts, xcPts, xcUrl, submittedAt: new Date().toISOString() };
+  localStorage.setItem(key, JSON.stringify(entry));
+
+  showSubmitMsg('✓ Score submitted! Previous entry replaced if exists.', true);
+});
+
+function showSubmitMsg(msg, ok) {
+  const el = document.getElementById('submitMsg');
+  el.textContent = msg;
+  el.style.display = 'block';
+  el.style.background = ok ? 'rgba(0,204,68,0.1)' : 'rgba(255,71,87,0.1)';
+  el.style.color = ok ? 'var(--green)' : 'var(--red)';
+  el.style.border = ok ? '1px solid rgba(0,204,68,0.3)' : '1px solid rgba(255,71,87,0.3)';
+  setTimeout(() => { el.style.display='none'; }, 4000);
 }
 
 // ── DRAG & DROP ───────────────────────────────────────────────────────────────
