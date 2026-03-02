@@ -855,6 +855,7 @@ document.getElementById('submitBtn').addEventListener('click', async () => {
 
     // Use pilot name as document ID so re-submit overwrites previous entry
     const docId = (compName + '_' + name).toLowerCase().replace(/[^a-z0-9]+/g, '_');
+    entry.docId = docId;  // store ID inside entry so score.html can delete reliably
     await window.db.collection('scores').doc(docId).set(entry);
 
     window.location.href = 'score.html';
