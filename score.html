@@ -241,8 +241,19 @@ function renderScores() {
   let html = '';
 
   for (const [date, pilots] of Object.entries(groups)) {
-    // Sort pilots within date by track points desc
-    pilots.sort((a, b) => (parsePoints(b.trackPts) || 0) - (parsePoints(a.trackPts) || 0));
+    // Best XContest score in this group (for rule of 3)
+    const bestXc = Math.max(0, ...pilots.map(p => parsePoints(p.xcPts) || 0));
+
+    // Sort by total score desc
+    pilots.sort((a, b) => {
+      const xcA = parsePoints(a.xcPts) || 0;
+      const xcB = parsePoints(b.xcPts) || 0;
+      const compA = bestXc > 0 ? Math.round((xcA / bestXc) * 500) : 0;
+      const compB = bestXc > 0 ? Math.round((xcB / bestXc) * 500) : 0;
+      const totalA = (parsePoints(a.trackPts) || 0) + compA;
+      const totalB = (parsePoints(b.trackPts) || 0) + compB;
+      return totalB - totalA;
+    });
 
     html += `<div class="date-group">
       <div class="date-header">${date}</div>
@@ -251,32 +262,43 @@ function renderScores() {
           <tr>
             <th>#</th>
             <th>Pilot</th>
-            <th class="right">Track Points</th>
             <th class="right">XContest Pts</th>
             <th class="right">Computed XC Pts<br><span style="font-size:0.5rem;opacity:0.6">max 500 pts</span></th>
+            <th class="right">Track Points</th>
             <th class="right">Total Score</th>
           </tr>
         </thead>
         <tbody>`;
 
     pilots.forEach((p, i) => {
-      const trackPts    = parsePoints(p.trackPts);
-      const xcPts       = parsePoints(p.xcPts);
+      const trackPts = parsePoints(p.trackPts);
+      const xcPts    = parsePoints(p.xcPts);
       const submittedAt = p.submittedAt ? new Date(p.submittedAt).toLocaleString() : '';
 
+      // Col 1: XContest raw points + optional link
+      const xcCell = xcPts !== null
+        ? `<span class="pts-xc">${xcPts.toFixed(2)}</span>${p.xcUrl ? ` <a href="${p.xcUrl}" target="_blank" style="font-size:0.55rem;color:var(--accent);opacity:0.6;text-decoration:none">↗</a>` : ''}`
+        : `<span class="pts-na">—</span>`;
+
+      // Col 2: Computed XC pts via rule of 3 (best = 500)
+      let computedXc = null;
+      if (xcPts !== null && bestXc > 0) computedXc = Math.round((xcPts / bestXc) * 500);
+      const computedCell = computedXc !== null
+        ? `<span class="pts-computed">${computedXc}</span>`
+        : `<span class="pts-na">—</span>`;
+
+      // Col 3: Waypoint track points
       const trackCell = trackPts !== null
         ? `<span class="pts-track">${trackPts}</span>`
         : `<span class="pts-na">—</span>`;
 
-      const xcCell = xcPts !== null
-        ? `<span class="pts-xc">${xcPts.toFixed(2)}</span>`
-        : `<span class="pts-na">—</span>`;
-
-      // Computed Tracklog Points — placeholder for future formula
-      const computedCell = `<span class="pts-computed">—</span>`;
-
-      const xcLinkCell = p.xcUrl
-        ? `<a href="${p.xcUrl}" target="_blank">View ↗</a>`
+      // Col 4: Total = computed XC + track
+      let total = null;
+      if (computedXc !== null && trackPts !== null) total = computedXc + trackPts;
+      else if (computedXc !== null) total = computedXc;
+      else if (trackPts !== null) total = trackPts;
+      const totalCell = total !== null
+        ? `<span class="pts-total">${total}</span>`
         : `<span class="pts-na">—</span>`;
 
       html += `<tr>
@@ -285,10 +307,10 @@ function renderScores() {
           <div class="pilot-name">${p.name}</div>
           <div class="submitted-at">${submittedAt}</div>
         </td>
-        <td class="xc-link-cell">${xcLinkCell}</td>
-        <td class="pts-cell">${trackCell}</td>
         <td class="pts-cell">${xcCell}</td>
         <td class="pts-cell">${computedCell}</td>
+        <td class="pts-cell">${trackCell}</td>
+        <td class="pts-cell">${totalCell}</td>
       </tr>`;
     });
 
