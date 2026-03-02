@@ -141,6 +141,21 @@
 
   .submitted-at { font-size:0.55rem; color:rgba(200,223,240,0.25); margin-top:0.1rem; }
 </style>
+<!-- Firebase -->
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<script>
+  const firebaseConfig = {
+    apiKey: "AIzaSyAo6MSWOQXVQuCuluk5hhJY36TGvNqc8L8",
+    authDomain: "air3tddanalyser.firebaseapp.com",
+    projectId: "air3tddanalyser",
+    storageBucket: "air3tddanalyser.firebasestorage.app",
+    messagingSenderId: "40508185051",
+    appId: "1:40508185051:web:6b7c9069e4d4f94e4f2ffe"
+  };
+  firebase.initializeApp(firebaseConfig);
+  window.db = firebase.firestore();
+</script>
 </head>
 <body>
 
@@ -171,17 +186,9 @@
 </main>
 
 <script>
-function loadScores() {
-  const entries = [];
-  for (let i = 0; i < localStorage.length; i++) {
-    const key = localStorage.key(i);
-    if (!key.startsWith('paratrace_pilot_')) continue;
-    try {
-      const e = JSON.parse(localStorage.getItem(key));
-      entries.push(e);
-    } catch(err) {}
-  }
-  return entries;
+async function loadScores() {
+  const snapshot = await window.db.collection('scores').get();
+  return snapshot.docs.map(doc => doc.data());
 }
 
 function groupByDate(entries) {
@@ -211,10 +218,16 @@ function rankClass(i) {
   return '';
 }
 
-function renderScores() {
+async function renderScores() {
   const container = document.getElementById('scoresContainer');
-  const entries   = loadScores();
-  console.log('Raw stored entries:', entries);
+  container.innerHTML = '<div class="empty-state"><span class="empty-icon">⏳</span>Loading scores...</div>';
+  let entries;
+  try {
+    entries = await loadScores();
+  } catch(err) {
+    container.innerHTML = `<div class="empty-state"><span class="empty-icon">❌</span>Error loading scores:<br>${err.message}</div>`;
+    return;
+  }
 
   if (!entries.length) {
     container.innerHTML = `
@@ -322,14 +335,17 @@ function renderScores() {
   container.innerHTML = html;
 }
 
-document.getElementById('clearAllBtn').addEventListener('click', () => {
+document.getElementById('clearAllBtn').addEventListener('click', async () => {
   if (!confirm('Delete all submitted scores? This cannot be undone.')) return;
-  const keys = [];
-  for (let i = 0; i < localStorage.length; i++) {
-    if (localStorage.key(i).startsWith('paratrace_pilot_')) keys.push(localStorage.key(i));
+  try {
+    const snapshot = await window.db.collection('scores').get();
+    const batch = window.db.batch();
+    snapshot.docs.forEach(doc => batch.delete(doc.ref));
+    await batch.commit();
+    renderScores();
+  } catch(err) {
+    alert('Error clearing scores: ' + err.message);
   }
-  keys.forEach(k => localStorage.removeItem(k));
-  renderScores();
 });
 
 // Render on load
