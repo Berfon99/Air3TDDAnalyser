@@ -194,10 +194,13 @@ function groupByDate(entries) {
   return groups;
 }
 
-function parsePoints(str) {
-  if (!str || str === '—') return null;
-  // Remove everything except digits and dot
-  const n = parseFloat(str.replace(/[^\d.]/g, ''));
+function parsePoints(val) {
+  if (val === null || val === undefined || val === '' || val === '—') return null;
+  // Already a number
+  if (typeof val === 'number') return isNaN(val) || val === 0 ? null : val;
+  // String: strip everything except digits and dot
+  const s = String(val).replace(/[^0-9.]/g, '');
+  const n = parseFloat(s);
   return isNaN(n) || n === 0 ? null : n;
 }
 
@@ -211,7 +214,7 @@ function rankClass(i) {
 function renderScores() {
   const container = document.getElementById('scoresContainer');
   const entries   = loadScores();
-  console.log('Loaded entries:', JSON.stringify(entries, null, 2));
+  console.log('Raw stored entries:', entries);
 
   if (!entries.length) {
     container.innerHTML = `
