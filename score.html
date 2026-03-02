@@ -219,9 +219,11 @@ function rankClass(i) {
 async function renderScores() {
   const container = document.getElementById('scoresContainer');
   container.innerHTML = '<div class="empty-state"><span class="empty-icon">⏳</span>Loading scores...</div>';
+
   let entries;
   try {
     entries = await loadScores();
+    console.log('Loaded', entries.length, 'entries:', entries);
   } catch(err) {
     container.innerHTML = `<div class="empty-state"><span class="empty-icon">❌</span>Error loading scores:<br>${err.message}</div>`;
     return;
@@ -238,24 +240,27 @@ async function renderScores() {
     return;
   }
 
-  // Sort entries by date desc, then by track points desc within each date
+  // Sort entries by date desc
   entries.sort((a, b) => {
-    const da = a.date || '', db = b.date || '';
     const parseDate = d => {
+      if (!d) return new Date(0);
       const p = d.split('/');
       return p.length === 3 ? new Date(`${p[2]}-${p[1]}-${p[0]}`) : new Date(0);
     };
-    return parseDate(db) - parseDate(da);
+    return parseDate(b.date) - parseDate(a.date);
   });
 
-  const groups = groupByDate(entries);
+  // Group by competition + date
+  const groups = groupByCompAndDate(entries);
   let html = '';
 
-  for (const [date, pilots] of Object.entries(groups)) {
+  for (const [groupKey, pilots] of Object.entries(groups)) {
+    const [compName, date] = groupKey.split('||');
+
     // Best XContest score in this group (for rule of 3)
     const bestXc = Math.max(0, ...pilots.map(p => parsePoints(p.xcPts) || 0));
 
-    // Sort by total score desc within this competition group
+    // Sort by total score desc within this group
     pilots.sort((a, b) => {
       const xcA = parsePoints(a.xcPts) || 0;
       const xcB = parsePoints(b.xcPts) || 0;
@@ -266,7 +271,7 @@ async function renderScores() {
       return totalB - totalA;
     });
 
-    // Collect doc IDs for this group (for targeted delete)
+    // Doc IDs for this group (for targeted delete)
     const groupDocIds = pilots.map(p =>
       ((p.compName || 'Unknown Competition') + '_' + p.name).toLowerCase().replace(/[^a-z0-9]+/g, '_')
     );
@@ -275,7 +280,7 @@ async function renderScores() {
       <div class="date-header" style="justify-content:space-between">
         <span>📅 ${date} &nbsp;·&nbsp; 🏁 ${compName}</span>
         <button class="tool-btn" style="font-size:0.55rem;padding:0.2rem 0.5rem;margin-left:1rem"
-          onclick="clearGroup(${JSON.stringify(groupDocIds)})">🗑 Clear</button>
+          onclick="clearGroup(${JSON.stringify(groupDocIds).replace(/"/g, '&quot;')})">🗑 Clear</button>
       </div>
       <table class="score-table">
         <thead>
@@ -296,30 +301,35 @@ async function renderScores() {
       const xcPts    = parsePoints(p.xcPts);
       const submittedAt = p.submittedAt ? new Date(p.submittedAt).toLocaleString() : '';
 
-      // Col 1: XContest raw points (no link here — link gets its own column)
+      // XContest raw points
       const xcCell = xcPts !== null
         ? `<span class="pts-xc">${xcPts.toFixed(2)}</span>`
         : `<span class="pts-na">—</span>`;
 
-      // Col 2: Computed XC pts via rule of 3 (best = 500)
+      // Computed XC pts via rule of 3 (best = 500)
       let computedXc = null;
       if (xcPts !== null && bestXc > 0) computedXc = Math.round((xcPts / bestXc) * 500);
       const computedCell = computedXc !== null
         ? `<span class="pts-computed">${computedXc}</span>`
         : `<span class="pts-na">—</span>`;
 
-      // Col 3: Waypoint track points
+      // Waypoint track points
       const trackCell = trackPts !== null
         ? `<span class="pts-track">${trackPts}</span>`
         : `<span class="pts-na">—</span>`;
 
-      // Col 4: Total = computed XC + track
+      // Total = computed XC + track
       let total = null;
       if (computedXc !== null && trackPts !== null) total = computedXc + trackPts;
       else if (computedXc !== null) total = computedXc;
       else if (trackPts !== null) total = trackPts;
       const totalCell = total !== null
         ? `<span class="pts-total">${total}</span>`
+        : `<span class="pts-na">—</span>`;
+
+      // XContest link
+      const linkCell = p.xcUrl
+        ? `<a href="${p.xcUrl}" target="_blank">View flight ↗</a>`
         : `<span class="pts-na">—</span>`;
 
       html += `<tr>
@@ -332,7 +342,7 @@ async function renderScores() {
         <td class="pts-cell">${computedCell}</td>
         <td class="pts-cell">${trackCell}</td>
         <td class="pts-cell">${totalCell}</td>
-        <td class="xc-link-cell">${p.xcUrl ? `<a href="${p.xcUrl}" target="_blank">View flight ↗</a>` : '<span class="pts-na">—</span>'}</td>
+        <td class="xc-link-cell">${linkCell}</td>
       </tr>`;
     });
 
@@ -342,19 +352,6 @@ async function renderScores() {
   container.innerHTML = html;
 }
 
-async function clearGroup(docIds) {
-  if (!confirm(`Delete ${docIds.length} score(s) for this competition? This cannot be undone.`)) return;
-  try {
-    const batch = window.db.batch();
-    docIds.forEach(id => {
-      batch.delete(window.db.collection('scores').doc(id));
-    });
-    await batch.commit();
-    renderScores();
-  } catch(err) {
-    alert('Error clearing scores: ' + err.message);
-  }
-}
 
 // Render on load
 renderScores();
