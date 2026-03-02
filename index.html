@@ -184,6 +184,21 @@
   .value-track { color:#ff8c00; }
   .value-xc    { color:var(--accent); }
 </style>
+<!-- Firebase -->
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<script>
+  const firebaseConfig = {
+    apiKey: "AIzaSyAo6MSWOQXVQuCuluk5hhJY36TGvNqc8L8",
+    authDomain: "air3tddanalyser.firebaseapp.com",
+    projectId: "air3tddanalyser",
+    storageBucket: "air3tddanalyser.firebasestorage.app",
+    messagingSenderId: "40508185051",
+    appId: "1:40508185051:web:6b7c9069e4d4f94e4f2ffe"
+  };
+  firebase.initializeApp(firebaseConfig);
+  window.db = firebase.firestore();
+</script>
 </head>
 <body>
 
@@ -789,29 +804,38 @@ function updateSummaryButtons() {
   document.getElementById('submitBtn').disabled = !card.classList.contains('visible');
 }
 
-document.getElementById('submitBtn').addEventListener('click', () => {
+document.getElementById('submitBtn').addEventListener('click', async () => {
   const name = document.getElementById('summaryName').textContent.trim();
   const date = document.getElementById('summaryDate').textContent.trim().replace('📅 ', '');
   const xcUrl = document.getElementById('xcUrl').value.trim();
 
   if (!name || name === '—') { alert('No pilot name found. Load an IGC file first.'); return; }
 
-  // Track points — stored as number by updateSummary, read from data attribute
   const trackPts = window._lastTrackPts || 0;
 
-  // XContest points — prefer manual field, then displayed value
   const manualVal = parseFloat(document.getElementById('xcPtsManual').value);
   const displayVal = parseFloat(document.getElementById('xcPts').textContent);
   const xcPts = (!isNaN(manualVal) && manualVal > 0) ? manualVal
               : (!isNaN(displayVal) && displayVal > 0) ? displayVal
               : null;
 
-  const key = 'paratrace_pilot_' + name.toLowerCase().replace(/[^a-z0-9]+/g, '_');
   const entry = { name, date, trackPts, xcPts, xcUrl, submittedAt: new Date().toISOString() };
-  console.log('Submitting:', entry);
-  localStorage.setItem(key, JSON.stringify(entry));
 
-  window.location.href = 'score.html';
+  try {
+    const btn = document.getElementById('submitBtn');
+    btn.textContent = '⏳ Submitting...';
+    btn.disabled = true;
+
+    // Use pilot name as document ID so re-submit overwrites previous entry
+    const docId = name.toLowerCase().replace(/[^a-z0-9]+/g, '_');
+    await window.db.collection('scores').doc(docId).set(entry);
+
+    window.location.href = 'score.html';
+  } catch(err) {
+    alert('Error submitting score: ' + err.message);
+    document.getElementById('submitBtn').textContent = '📤 Submit';
+    document.getElementById('submitBtn').disabled = false;
+  }
 });
 
 function showSubmitMsg(msg, ok) {
