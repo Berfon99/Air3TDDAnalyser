@@ -1,0 +1,683 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Parapente · Analyseur de Manche</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;700;800&display=swap');
+
+  :root {
+    --sky: #0a1628;
+    --horizon: #0d2444;
+    --cloud: #e8f4fd;
+    --accent: #00d4ff;
+    --gold: #ffd700;
+    --green: #00ff88;
+    --red: #ff4757;
+    --orange: #ff9f43;
+    --text: #c8dff0;
+    --panel: rgba(13,36,68,0.95);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--sky);
+    color: var(--text);
+    font-family: 'Space Mono', monospace;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  header {
+    background: linear-gradient(135deg, #061018 0%, var(--horizon) 100%);
+    padding: 1rem 2rem;
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+    border-bottom: 1px solid rgba(0,212,255,0.2);
+    box-shadow: 0 4px 30px rgba(0,0,0,0.5);
+  }
+
+  .logo {
+    font-family: 'Syne', sans-serif;
+    font-weight: 800;
+    font-size: 1.5rem;
+    color: var(--accent);
+    letter-spacing: -0.02em;
+  }
+
+  .logo span { color: var(--gold); }
+
+  .tagline {
+    font-size: 0.7rem;
+    color: rgba(200,223,240,0.5);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+
+  .main-layout {
+    display: grid;
+    grid-template-columns: 340px 1fr;
+    flex: 1;
+    min-height: 0;
+    height: calc(100vh - 70px);
+  }
+
+  .sidebar {
+    background: var(--panel);
+    border-right: 1px solid rgba(0,212,255,0.15);
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    padding: 1.5rem;
+    gap: 1.5rem;
+  }
+
+  .section-title {
+    font-family: 'Syne', sans-serif;
+    font-size: 0.65rem;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 0.8rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .section-title::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: rgba(0,212,255,0.2);
+  }
+
+  .upload-zone {
+    border: 1.5px dashed rgba(0,212,255,0.3);
+    border-radius: 8px;
+    padding: 1.2rem;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s;
+    background: rgba(0,212,255,0.03);
+    position: relative;
+  }
+
+  .upload-zone:hover, .upload-zone.drag-over {
+    border-color: var(--accent);
+    background: rgba(0,212,255,0.08);
+  }
+
+  .upload-zone input {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    cursor: pointer;
+    width: 100%;
+  }
+
+  .upload-icon { font-size: 1.8rem; margin-bottom: 0.4rem; }
+
+  .upload-label {
+    font-size: 0.72rem;
+    color: var(--accent);
+    font-weight: 700;
+  }
+
+  .upload-sub {
+    font-size: 0.6rem;
+    color: rgba(200,223,240,0.4);
+    margin-top: 0.2rem;
+  }
+
+  .file-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    background: rgba(0,255,136,0.1);
+    border: 1px solid rgba(0,255,136,0.3);
+    border-radius: 4px;
+    padding: 0.3rem 0.6rem;
+    font-size: 0.65rem;
+    color: var(--green);
+    margin-top: 0.5rem;
+    word-break: break-all;
+  }
+
+  .waypoints-list { display: flex; flex-direction: column; gap: 0.5rem; }
+
+  .wp-item {
+    background: rgba(255,255,255,0.04);
+    border-radius: 6px;
+    padding: 0.7rem;
+    border-left: 3px solid transparent;
+    display: flex;
+    align-items: center;
+    gap: 0.7rem;
+    font-size: 0.7rem;
+  }
+
+  .wp-item.tp { border-color: var(--orange); }
+  .wp-item.goal { border-color: var(--gold); }
+  .wp-item.sss { border-color: var(--accent); }
+
+  .wp-dot {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .wp-info { flex: 1; }
+  .wp-name { font-weight: 700; color: var(--cloud); }
+  .wp-detail { color: rgba(200,223,240,0.5); font-size: 0.62rem; margin-top: 0.1rem; }
+
+  .wp-tag {
+    font-size: 0.55rem;
+    letter-spacing: 0.08em;
+    padding: 0.15rem 0.4rem;
+    border-radius: 3px;
+    font-weight: 700;
+  }
+
+  .tag-tp { background: rgba(255,159,67,0.2); color: var(--orange); }
+  .tag-goal { background: rgba(255,215,0,0.2); color: var(--gold); }
+  .tag-sss { background: rgba(0,212,255,0.2); color: var(--accent); }
+
+  .btn {
+    width: 100%;
+    padding: 0.8rem;
+    border: none;
+    border-radius: 6px;
+    font-family: 'Space Mono', monospace;
+    font-size: 0.75rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+
+  .btn-primary {
+    background: linear-gradient(135deg, var(--accent), #0099cc);
+    color: #000;
+  }
+
+  .btn-primary:hover { filter: brightness(1.1); transform: translateY(-1px); }
+  .btn-primary:disabled { opacity: 0.3; cursor: not-allowed; transform: none; }
+
+  .score-panel {
+    background: rgba(255,255,255,0.03);
+    border-radius: 8px;
+    padding: 1rem;
+    border: 1px solid rgba(0,212,255,0.1);
+  }
+
+  .score-total {
+    font-family: 'Syne', sans-serif;
+    font-size: 2.5rem;
+    font-weight: 800;
+    color: var(--gold);
+    text-align: center;
+    line-height: 1;
+  }
+
+  .score-label {
+    text-align: center;
+    font-size: 0.6rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: rgba(200,223,240,0.4);
+    margin-top: 0.2rem;
+  }
+
+  .score-breakdown { margin-top: 0.8rem; display: flex; flex-direction: column; gap: 0.3rem; }
+
+  .score-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 0.68rem;
+    padding: 0.4rem 0.6rem;
+    border-radius: 4px;
+    background: rgba(255,255,255,0.03);
+  }
+
+  .score-item.passed { color: var(--green); }
+  .score-item.failed { color: rgba(200,223,240,0.3); }
+  .score-item.passed::before { content: '✓ '; }
+  .score-item.failed::before { content: '✗ '; }
+
+  .score-pts {
+    font-weight: 700;
+    font-size: 0.75rem;
+  }
+
+  #map {
+    flex: 1;
+    z-index: 0;
+  }
+
+  .status-bar {
+    position: absolute;
+    bottom: 1rem;
+    right: 1rem;
+    background: var(--panel);
+    border: 1px solid rgba(0,212,255,0.2);
+    border-radius: 6px;
+    padding: 0.5rem 1rem;
+    font-size: 0.65rem;
+    z-index: 1000;
+    max-width: 300px;
+  }
+
+  .loading {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .spinner {
+    width: 12px; height: 12px;
+    border: 2px solid rgba(0,212,255,0.3);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .empty-state {
+    text-align: center;
+    padding: 1rem;
+    color: rgba(200,223,240,0.3);
+    font-size: 0.68rem;
+  }
+
+  .map-wrapper { position: relative; flex: 1; }
+
+  /* Leaflet overrides */
+  .leaflet-container { background: #0a1628; }
+
+  .custom-marker {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    border: 2px solid white;
+    font-size: 10px;
+    font-weight: bold;
+    color: white;
+    font-family: 'Space Mono', monospace;
+  }
+
+  .info-msg {
+    background: rgba(0,212,255,0.08);
+    border: 1px solid rgba(0,212,255,0.2);
+    border-radius: 6px;
+    padding: 0.6rem;
+    font-size: 0.65rem;
+    color: rgba(200,223,240,0.6);
+    line-height: 1.5;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <div class="logo">Para<span>Trace</span></div>
+    <div class="tagline">Analyseur de manche · XCTask & IGC</div>
+  </div>
+</header>
+
+<div class="main-layout">
+  <div class="sidebar">
+
+    <!-- XCTSK -->
+    <div>
+      <div class="section-title">📍 Manche XCTask</div>
+      <div class="upload-zone" id="xctskZone">
+        <input type="file" accept=".xctsk,.json" id="xctskInput">
+        <div class="upload-icon">🗺️</div>
+        <div class="upload-label">Charger fichier .xctsk</div>
+        <div class="upload-sub">Glisser-déposer ou cliquer</div>
+      </div>
+      <div id="xctskBadge"></div>
+    </div>
+
+    <!-- Waypoints -->
+    <div>
+      <div class="section-title">🎯 Balises</div>
+      <div class="waypoints-list" id="waypointsList">
+        <div class="empty-state">Aucune manche chargée</div>
+      </div>
+    </div>
+
+    <!-- IGC -->
+    <div>
+      <div class="section-title">✈️ Trace IGC</div>
+      <div class="upload-zone" id="igcZone">
+        <input type="file" accept=".igc" id="igcInput">
+        <div class="upload-icon">📡</div>
+        <div class="upload-label">Charger fichier .igc</div>
+        <div class="upload-sub">Trace de vol GPS</div>
+      </div>
+      <div id="igcBadge"></div>
+    </div>
+
+    <!-- Analyse -->
+    <div>
+      <div class="section-title">🔍 Analyse</div>
+      <button class="btn btn-primary" id="analyzeBtn" disabled>Analyser la trace</button>
+    </div>
+
+    <!-- Score -->
+    <div>
+      <div class="section-title">🏆 Score</div>
+      <div class="score-panel">
+        <div class="score-total" id="scoreTotal">—</div>
+        <div class="score-label">points</div>
+        <div class="score-breakdown" id="scoreBreakdown">
+          <div class="info-msg">Chargez une manche et une trace IGC, puis lancez l'analyse.</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="map-wrapper">
+    <div id="map"></div>
+  </div>
+</div>
+
+<script>
+// ─── MAP INIT ───────────────────────────────────────────────────────────────
+const map = L.map('map', { zoomControl: true }).setView([45.5, 6.5], 9);
+
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '© OpenStreetMap contributors',
+  maxZoom: 18,
+}).addTo(map);
+
+// State
+let taskData = null;
+let igcPoints = [];
+let taskLayers = L.layerGroup().addTo(map);
+let igcLayer = L.layerGroup().addTo(map);
+
+// ─── XCTSK PARSING ──────────────────────────────────────────────────────────
+document.getElementById('xctskInput').addEventListener('change', e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    try {
+      taskData = parseXCTask(ev.target.result, file.name);
+      renderTask(taskData);
+      document.getElementById('xctskBadge').innerHTML = `<div class="file-badge">✓ ${file.name}</div>`;
+      checkEnableAnalyze();
+    } catch(err) {
+      alert('Erreur lecture XCTask: ' + err.message);
+    }
+  };
+  reader.readAsText(file);
+});
+
+function parseXCTask(content, filename) {
+  // Try JSON first
+  try {
+    const data = JSON.parse(content);
+    return parseXCTaskJSON(data);
+  } catch(e) {}
+  throw new Error('Format non reconnu. Seul le format JSON .xctsk est supporté.');
+}
+
+function parseXCTaskJSON(data) {
+  const waypoints = [];
+  const tps = data.turnpoints || data.task?.turnpoints || [];
+  
+  tps.forEach((tp, i) => {
+    const wp = tp.waypoint || tp;
+    const lat = wp.lat ?? wp.latitude;
+    const lon = wp.lon ?? wp.longitude;
+    const radius = tp.radius ?? tp.cylinderRadius ?? 400;
+    const name = wp.name || wp.description || `WP${i}`;
+    
+    let type = 'TP';
+    if (i === 0) type = 'SSS'; // Start
+    if (i === tps.length - 1) type = 'GOAL';
+    
+    // Check explicit type fields
+    if (tp.type) {
+      const t = tp.type.toString().toUpperCase();
+      if (t.includes('GOAL') || t === 'ESS' || t === '3') type = 'GOAL';
+      if (t.includes('SSS') || t.includes('START') || t === '1') type = 'SSS';
+    }
+
+    waypoints.push({ lat: parseFloat(lat), lon: parseFloat(lon), radius: parseFloat(radius), name, type, index: i });
+  });
+
+  return { waypoints };
+}
+
+function renderTask(task) {
+  taskLayers.clearLayers();
+  const listEl = document.getElementById('waypointsList');
+  listEl.innerHTML = '';
+
+  const bounds = [];
+
+  task.waypoints.forEach((wp, i) => {
+    const color = wp.type === 'GOAL' ? '#ffd700' : wp.type === 'SSS' ? '#00d4ff' : '#ff9f43';
+    
+    // Circle
+    L.circle([wp.lat, wp.lon], {
+      radius: wp.radius,
+      color,
+      fillColor: color,
+      fillOpacity: 0.1,
+      weight: 2
+    }).bindPopup(`<b>${wp.name}</b><br>Type: ${wp.type}<br>Rayon: ${wp.radius}m`).addTo(taskLayers);
+
+    // Marker
+    const icon = L.divIcon({
+      className: '',
+      html: `<div class="custom-marker" style="width:24px;height:24px;background:${color}88;border-color:${color}">${i+1}</div>`,
+      iconSize: [24, 24],
+      iconAnchor: [12, 12]
+    });
+    L.marker([wp.lat, wp.lon], { icon }).addTo(taskLayers);
+    bounds.push([wp.lat, wp.lon]);
+
+    // Sidebar
+    const cls = wp.type === 'GOAL' ? 'goal' : wp.type === 'SSS' ? 'sss' : 'tp';
+    const tagCls = 'tag-' + cls;
+    const label = wp.type === 'GOAL' ? 'GOAL' : wp.type === 'SSS' ? 'SSS' : `TP${i}`;
+    listEl.innerHTML += `
+      <div class="wp-item ${cls}">
+        <div class="wp-dot" style="background:${color}"></div>
+        <div class="wp-info">
+          <div class="wp-name">${wp.name}</div>
+          <div class="wp-detail">⌀ ${(wp.radius*2).toFixed(0)}m · ${wp.lat.toFixed(4)}, ${wp.lon.toFixed(4)}</div>
+        </div>
+        <span class="wp-tag ${tagCls}">${label}</span>
+      </div>`;
+  });
+
+  if (bounds.length) map.fitBounds(bounds, { padding: [60, 60] });
+}
+
+// ─── IGC PARSING ─────────────────────────────────────────────────────────────
+document.getElementById('igcInput').addEventListener('change', e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    igcPoints = parseIGC(ev.target.result);
+    renderIGC(igcPoints);
+    document.getElementById('igcBadge').innerHTML = `<div class="file-badge">✓ ${file.name} · ${igcPoints.length} pts</div>`;
+    checkEnableAnalyze();
+  };
+  reader.readAsText(file);
+});
+
+function parseIGC(content) {
+  const points = [];
+  const lines = content.split(/\r?\n/);
+  for (const line of lines) {
+    if (!line.startsWith('B')) continue;
+    if (line.length < 35) continue;
+    try {
+      const hh = parseInt(line.slice(1,3));
+      const mm = parseInt(line.slice(3,5));
+      const ss = parseInt(line.slice(5,7));
+      const latD = parseInt(line.slice(7,9));
+      const latM = parseInt(line.slice(9,14)) / 1000;
+      const latH = line[14];
+      const lonD = parseInt(line.slice(15,18));
+      const lonM = parseInt(line.slice(18,23)) / 1000;
+      const lonH = line[23];
+      const validity = line[24];
+      if (validity !== 'A') continue;
+      let lat = latD + latM / 60;
+      if (latH === 'S') lat = -lat;
+      let lon = lonD + lonM / 60;
+      if (lonH === 'W') lon = -lon;
+      const alt = parseInt(line.slice(25,30));
+      if (lat !== 0 || lon !== 0) points.push({ lat, lon, alt, time: hh*3600+mm*60+ss });
+    } catch(e) {}
+  }
+  return points;
+}
+
+function renderIGC(points) {
+  igcLayer.clearLayers();
+  if (!points.length) return;
+  const latlngs = points.map(p => [p.lat, p.lon]);
+  L.polyline(latlngs, { color: '#00ff88', weight: 2, opacity: 0.8 }).addTo(igcLayer);
+  
+  // Start marker
+  const startIcon = L.divIcon({ className:'', html:`<div style="width:10px;height:10px;background:#00ff88;border-radius:50%;border:2px solid white"></div>`, iconSize:[10,10], iconAnchor:[5,5]});
+  L.marker([points[0].lat, points[0].lon], {icon: startIcon}).bindPopup('Décollage').addTo(igcLayer);
+  const endIcon = L.divIcon({ className:'', html:`<div style="width:10px;height:10px;background:#ff4757;border-radius:50%;border:2px solid white"></div>`, iconSize:[10,10], iconAnchor:[5,5]});
+  L.marker([points[points.length-1].lat, points[points.length-1].lon], {icon: endIcon}).bindPopup('Atterrissage').addTo(igcLayer);
+
+  if (!taskData) map.fitBounds(latlngs, { padding: [40,40] });
+}
+
+// ─── ANALYSIS ────────────────────────────────────────────────────────────────
+function checkEnableAnalyze() {
+  document.getElementById('analyzeBtn').disabled = !(taskData && igcPoints.length);
+}
+
+document.getElementById('analyzeBtn').addEventListener('click', analyze);
+
+function haversineKm(lat1, lon1, lat2, lon2) {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+function pointInCylinder(point, wp) {
+  const dist = haversineKm(point.lat, point.lon, wp.lat, wp.lon) * 1000; // meters
+  return dist <= wp.radius;
+}
+
+function analyze() {
+  const results = [];
+  let score = 0;
+  const breakdown = document.getElementById('scoreBreakdown');
+  breakdown.innerHTML = '';
+
+  // Check each waypoint (skip SSS for scoring, but check order)
+  const tps = taskData.waypoints.filter(wp => wp.type !== 'SSS');
+  
+  // We check waypoints in order
+  let wpIndex = 0;
+  const passed = new Array(taskData.waypoints.length).fill(false);
+
+  // Sequential check
+  for (const point of igcPoints) {
+    if (wpIndex >= taskData.waypoints.length) break;
+    const wp = taskData.waypoints[wpIndex];
+    if (pointInCylinder(point, wp)) {
+      passed[wpIndex] = true;
+      wpIndex++;
+    }
+  }
+
+  // Score
+  let html = '';
+  let total = 0;
+  taskData.waypoints.forEach((wp, i) => {
+    const ok = passed[i];
+    if (wp.type === 'SSS') return; // No points for start
+    const pts = wp.type === 'GOAL' ? 200 : 100;
+    if (ok) total += pts;
+    const cls = ok ? 'passed' : 'failed';
+    const ptsLabel = ok ? `+${pts}` : `+0`;
+    const typeLabel = wp.type === 'GOAL' ? 'Goal' : `Balise ${i}`;
+    html += `<div class="score-item ${cls}"><span>${typeLabel} — ${wp.name}</span><span class="score-pts">${ptsLabel}</span></div>`;
+  });
+
+  document.getElementById('scoreTotal').textContent = total;
+  breakdown.innerHTML = html;
+
+  // Visual feedback on map
+  taskLayers.eachLayer(layer => {
+    if (layer.setStyle) {
+      // Reset
+    }
+  });
+
+  // Re-render task with pass/fail colors
+  taskLayers.clearLayers();
+  taskData.waypoints.forEach((wp, i) => {
+    let color;
+    if (passed[i]) {
+      color = '#00ff88';
+    } else {
+      color = wp.type === 'GOAL' ? '#ffd700' : wp.type === 'SSS' ? '#00d4ff' : '#ff9f43';
+    }
+    const opacity = passed[i] ? 0.25 : 0.08;
+
+    L.circle([wp.lat, wp.lon], {
+      radius: wp.radius,
+      color, fillColor: color, fillOpacity: opacity, weight: passed[i] ? 3 : 2
+    }).bindPopup(`<b>${wp.name}</b><br>${passed[i] ? '✅ Validée' : '❌ Non validée'}`).addTo(taskLayers);
+
+    const icon = L.divIcon({
+      className: '',
+      html: `<div class="custom-marker" style="width:24px;height:24px;background:${color}88;border-color:${color}">${passed[i]?'✓':i+1}</div>`,
+      iconSize: [24, 24], iconAnchor: [12, 12]
+    });
+    L.marker([wp.lat, wp.lon], { icon }).addTo(taskLayers);
+  });
+}
+
+// Drag & drop helpers
+['xctskZone', 'igcZone'].forEach(id => {
+  const el = document.getElementById(id);
+  el.addEventListener('dragover', e => { e.preventDefault(); el.classList.add('drag-over'); });
+  el.addEventListener('dragleave', () => el.classList.remove('drag-over'));
+  el.addEventListener('drop', e => {
+    e.preventDefault(); el.classList.remove('drag-over');
+    const file = e.dataTransfer.files[0];
+    if (!file) return;
+    const inputId = id === 'xctskZone' ? 'xctskInput' : 'igcInput';
+    const dt = new DataTransfer();
+    dt.items.add(file);
+    document.getElementById(inputId).files = dt.files;
+    document.getElementById(inputId).dispatchEvent(new Event('change'));
+  });
+});
+</script>
+</body>
+</html>
