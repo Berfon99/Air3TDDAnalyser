@@ -458,6 +458,18 @@ function renderTask(task) {
   });
   if (bounds.length) map.fitBounds(bounds, {padding:[60,60]});
 
+  // Show "Land by" deadline from task
+  const landByRow  = document.getElementById('landByRow');
+  const landByTime = document.getElementById('landByTime');
+  if (task.deadlineSec !== null && task.deadlineSec !== undefined) {
+    const dh = Math.floor(task.deadlineSec / 3600).toString().padStart(2,'0');
+    const dm = Math.floor((task.deadlineSec % 3600) / 60).toString().padStart(2,'0');
+    landByTime.textContent = dh + ':' + dm;
+  } else {
+    landByTime.textContent = 'Not set';
+  }
+  // Always show the row (visibility controlled by toggle button)
+  landByRow.dataset.hasContent = 'true';
 }
 
 // ── TASK URL LOADER ──────────────────────────────────────────────────────────
@@ -957,15 +969,12 @@ function showSubmitMsg(msg, ok) {
 
 // ── WAYPOINTS TOGGLE ─────────────────────────────────────────────────────────
 function toggleWaypoints() {
-  const list     = document.getElementById('waypointsList');
-  const landBy   = document.getElementById('landByRow');
-  const btn      = document.getElementById('wpToggle');
+  const list   = document.getElementById('waypointsList');
+  const landBy = document.getElementById('landByRow');
+  const btn    = document.getElementById('wpToggle');
   const isHidden = list.style.display === 'none';
   list.style.display   = isHidden ? 'flex' : 'none';
-  // Only show landByRow if it has content (deadline exists)
-  if (landBy && document.getElementById('landByTime').textContent !== '—') {
-    landBy.style.display = isHidden ? 'block' : 'none';
-  }
+  landBy.style.display = isHidden ? 'block' : 'none';
   btn.textContent = isHidden ? '−' : '+';
 }
 
