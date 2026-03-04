@@ -240,20 +240,14 @@
     </div>
 
     <div>
-      <div class="section-title">🏁 Competition Name</div>
-      <div class="xcontest-section">
-        <div class="input-row">
-          <input class="xc-input" id="compName" type="text" placeholder="Auto-filled from waypoints…" style="flex:1">
-        </div>
-        <div style="font-size:0.58rem;color:rgba(200,223,240,0.35);line-height:1.4">
-          Edit to distinguish competitions on the same day.
-        </div>
+      <div class="section-title">🎯 Waypoints
+        <button id="wpToggle" onclick="toggleWaypoints()" style="
+          background:none;border:none;cursor:pointer;
+          color:var(--accent);font-size:1rem;font-weight:700;
+          margin-left:0.5rem;line-height:1;padding:0 0.2rem;
+        ">+</button>
       </div>
-    </div>
-
-    <div>
-      <div class="section-title">🎯 Waypoints</div>
-      <div class="waypoints-list" id="waypointsList">
+      <div class="waypoints-list" id="waypointsList" style="display:none">
         <div class="empty-state">No task loaded</div>
       </div>
     </div>
@@ -319,6 +313,11 @@
     <!-- Summary -->
     <div>
       <div class="section-title">📋 Summary</div>
+      <div id="violationBox" style="
+        display:none; background:rgba(255,71,87,0.1); border:1px solid rgba(255,71,87,0.35);
+        border-radius:8px; padding:0.9rem 1rem; font-size:0.65rem; line-height:1.8;
+        color:rgba(255,180,180,0.9); margin-bottom:0.5rem;
+      "></div>
       <div class="summary-card" id="summaryCard">
         <div>
           <div class="summary-pilot" id="summaryName">—</div>
@@ -379,7 +378,17 @@ document.getElementById('xctskInput').addEventListener('change', e => {
 
 function parseXCTaskJSON(data) {
   const tps = data.turnpoints || data.task?.turnpoints || [];
+
+  // Parse goal deadline from xctsk (e.g. "07:00:00Z" = seconds since midnight UTC)
+  let deadlineSec = null;
+  const deadlineStr = data.goal?.deadline || data.task?.goal?.deadline || null;
+  if (deadlineStr) {
+    const m = deadlineStr.match(/(\d{2}):(\d{2}):(\d{2})/);
+    if (m) deadlineSec = parseInt(m[1])*3600 + parseInt(m[2])*60 + parseInt(m[3]);
+  }
+
   return {
+    deadlineSec,
     waypoints: tps.map((tp, i) => {
       const wp = tp.waypoint || tp;
       const lat    = parseFloat(wp.lat    ?? wp.latitude);
@@ -444,16 +453,6 @@ function renderTask(task) {
   });
   if (bounds.length) map.fitBounds(bounds, {padding:[60,60]});
 
-  // Auto-fill competition name from waypoint names + radii
-  const wpSummary = task.waypoints
-    .filter(w => w.type !== 'TAKEOFF')
-    .map(w => `${w.name}(${w.radius}m)`)
-    .join(' · ');
-  const compInput = document.getElementById('compName');
-  if (compInput && (!compInput.value || compInput.dataset.autoFilled === 'true')) {
-    compInput.value = wpSummary;
-    compInput.dataset.autoFilled = 'true';
-  }
 }
 
 // ── TASK URL LOADER ──────────────────────────────────────────────────────────
@@ -621,9 +620,7 @@ document.getElementById('xcUrl').addEventListener('keydown', e => { if(e.key==='
 document.getElementById('xcManualOk').addEventListener('click', applyManualXcPoints);
 document.getElementById('xcPtsManual').addEventListener('keydown', e => { if(e.key==='Enter') applyManualXcPoints(); });
 // checkEnableAnalyze is called after applyManualXcPoints (OK/Enter) confirms the value
-document.getElementById('compName').addEventListener('input', () => {
-  document.getElementById('compName').dataset.autoFilled = 'false';
-});
+
 
 async function fetchXContest() {
   const url    = document.getElementById('xcUrl').value.trim();
@@ -802,13 +799,50 @@ function analyze() {
   // ── IMPORTANT : redessiner la trace IGC (elle reste visible) ──
   renderIGC(igcPoints);
 
+  // ── Flight validity checks ──
+  const violations = [];
+
+  // 1. Check flight ended before the goal deadline (from xctsk)
+  const lastPoint = igcPoints[igcPoints.length - 1];
+  const lastTimeSec = lastPoint ? lastPoint.time : 0;
+  const deadlineSec = taskData.deadlineSec;
+  if (deadlineSec !== null && lastTimeSec > deadlineSec) {
+    const dh = Math.floor(deadlineSec / 3600).toString().padStart(2,'0');
+    const dm = Math.floor((deadlineSec % 3600) / 60).toString().padStart(2,'0');
+    const fh = Math.floor(lastTimeSec / 3600).toString().padStart(2,'0');
+    const fm = Math.floor((lastTimeSec % 3600) / 60).toString().padStart(2,'0');
+    violations.push(`Flight ended at ${fh}:${fm} UTC, after the task deadline of ${dh}:${dm} UTC`);
+  }
+
+  // 2. Check flight did not continue significantly after goal
+  if (goalPassed && goal) {
+    // Find the index where goal was first validated
+    let goalIdx = -1;
+    const goalSearchFrom = (typeof lastTpIGC !== 'undefined' && lastTpIGC > 0) ? lastTpIGC : (sssIdx > 0 ? sssIdx : 0);
+    for (let i = goalSearchFrom; i < igcPoints.length; i++) {
+      if (inCyl(igcPoints[i], goal)) { goalIdx = i; break; }
+    }
+    if (goalIdx !== -1) {
+      // Check if flight continued more than 2 minutes after goal
+      const goalTime = igcPoints[goalIdx].time;
+      const lastTime = igcPoints[igcPoints.length - 1].time;
+      // Handle midnight crossing (time wraps around)
+      const extraSeconds = lastTime >= goalTime ? lastTime - goalTime : (86400 - goalTime) + lastTime;
+      if (extraSeconds > 120) {
+        const extraMin = Math.round(extraSeconds / 60);
+        violations.push(`Flight continued ${extraMin} min after reaching Goal`);
+      }
+    }
+  }
+
   // ── Summary card ──
-  updateSummary(total);
+  updateSummary(total, violations);
 }
 
-function updateSummary(trackPts) {
+function updateSummary(trackPts, violations) {
   const card = document.getElementById('summaryCard');
   card.classList.add('visible');
+  window._flightViolations = violations || [];
 
   // Pilot name & date
   const pilotName = document.getElementById('pilotName').textContent || '—';
@@ -816,7 +850,7 @@ function updateSummary(trackPts) {
   document.getElementById('summaryName').textContent = pilotName;
   document.getElementById('summaryDate').textContent = pilotDate;
 
-  // Track points (actual score from analysis)
+  // Track points
   document.getElementById('summaryTrackPts').textContent = trackPts + ' pts';
 
   // XContest points if available
@@ -829,13 +863,28 @@ function updateSummary(trackPts) {
   } else {
     xcRow.style.display = 'none';
   }
+
+  // Show violations if any
+  const violBox = document.getElementById('violationBox');
+  if (violations && violations.length > 0) {
+    violBox.style.display = 'block';
+    violBox.innerHTML = violations.map(v =>
+      `⚠️ Flight not valid because of: <b>${v}</b>.`
+    ).join('<br>') +
+    '<br><br>Please contact the organiser to check if your flight can be submitted.';
+  } else {
+    violBox.style.display = 'none';
+  }
+
   updateSummaryButtons();
 }
 
 // ── SUBMIT ───────────────────────────────────────────────────────────────────
 function updateSummaryButtons() {
   const card = document.getElementById('summaryCard');
-  document.getElementById('submitBtn').disabled = !card.classList.contains('visible');
+  const hasViolations = window._flightViolations && window._flightViolations.length > 0;
+  const isVisible = card.classList.contains('visible');
+  document.getElementById('submitBtn').disabled = !isVisible || hasViolations;
 }
 
 document.getElementById('submitBtn').addEventListener('click', async () => {
@@ -853,7 +902,11 @@ document.getElementById('submitBtn').addEventListener('click', async () => {
               : (!isNaN(displayVal) && displayVal > 0) ? displayVal
               : null;
 
-  const compName = document.getElementById('compName').value.trim() || 'Unknown Competition';
+  // Competition name = waypoint fingerprint (no user input - editable only in scoreboard)
+  const compName = taskData ? taskData.waypoints
+    .filter(w => w.type !== 'TAKEOFF')
+    .map(w => w.name + '(' + w.radius + 'm)')
+    .join(' · ') : 'Unknown Competition';
 
   // Compute a canonical key from the waypoints (date + sorted waypoint names+radii)
   // This groups flights with same task regardless of human-given competition name
@@ -892,6 +945,15 @@ function showSubmitMsg(msg, ok) {
   el.style.color = ok ? 'var(--green)' : 'var(--red)';
   el.style.border = ok ? '1px solid rgba(0,204,68,0.3)' : '1px solid rgba(255,71,87,0.3)';
   setTimeout(() => { el.style.display='none'; }, 4000);
+}
+
+// ── WAYPOINTS TOGGLE ─────────────────────────────────────────────────────────
+function toggleWaypoints() {
+  const list = document.getElementById('waypointsList');
+  const btn  = document.getElementById('wpToggle');
+  const isHidden = list.style.display === 'none';
+  list.style.display = isHidden ? 'flex' : 'none';
+  btn.textContent = isHidden ? '−' : '+';
 }
 
 // ── RESTORE LAST TASK ON PAGE LOAD ───────────────────────────────────────────
