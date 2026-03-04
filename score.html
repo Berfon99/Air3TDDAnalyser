@@ -164,7 +164,17 @@
     <a href="https://www.fly-air3.com/" target="_blank" style="text-decoration:none"><div class="logo">AIR³ TDD<span> Task Analyser</span></div></a>
     <div class="tagline">powered by Snowy</div>
   </div>
-  <a href="index.html" class="back-btn">← Back to Analyzer</a>
+  <div style="display:flex;gap:0.6rem;align-items:center">
+    <a href="rules.html" style="
+      display:inline-flex;align-items:center;gap:0.4rem;
+      background:rgba(255,215,0,0.12);border:1px solid rgba(255,215,0,0.35);
+      border-radius:6px;padding:0.35rem 0.8rem;
+      color:#ffd700;text-decoration:none;
+      font-family:'Space Mono',monospace;font-size:0.65rem;font-weight:700;
+      letter-spacing:0.05em;
+    ">📋 RULES</a>
+    <a href="index.html" class="back-btn">← Back to Analyzer</a>
+  </div>
 </header>
 
 <main>
@@ -197,7 +207,9 @@ async function loadScores() {
 function groupByCompAndDate(entries) {
   const groups = {};
   entries.forEach(e => {
-    const key = (e.compName || 'Unknown Competition') + '||' + (e.date || 'Unknown date');
+    // Use compKey (waypoint fingerprint) for canonical grouping if available
+    // fallback to compName+date for old entries
+    const key = e.compKey || ((e.compName || 'Unknown Competition') + '||' + (e.date || 'Unknown date'));
     if (!groups[key]) groups[key] = [];
     groups[key].push(e);
   });
@@ -260,7 +272,11 @@ async function renderScores() {
   let html = '';
 
   for (const [groupKey, pilots] of Object.entries(groups)) {
-    const [compName, date] = groupKey.split('||');
+    // Display name = most recently used compName for this group (editable)
+    const displayDate = pilots[0].date || 'Unknown date';
+    const displayName = pilots.slice().sort((a,b) =>
+      new Date(b.submittedAt||0) - new Date(a.submittedAt||0)
+    )[0].compName || 'Unknown Competition';
 
     // Best XContest score in this group (for rule of 3)
     const bestXc = Math.max(0, ...pilots.map(p => parsePoints(p.xcPts) || 0));
@@ -276,17 +292,19 @@ async function renderScores() {
       return totalB - totalA;
     });
 
-    // Doc IDs for this group (for targeted delete)
-    // Use real Firestore doc ID stored in _firestoreId (most reliable)
-    const groupDocIds = pilots.map(p => p._firestoreId || p.docId || 
+    // Use real Firestore doc IDs for deletion
+    const groupDocIds = pilots.map(p => p._firestoreId || p.docId ||
       ((p.compName || 'Unknown Competition') + '_' + p.name).toLowerCase().replace(/[^a-z0-9]+/g, '_')
     );
+    const safeDocIds = groupDocIds.join('|');
 
     html += `<div class="date-group">
-      <div class="date-header" style="justify-content:space-between">
-        <span>📅 ${date} &nbsp;·&nbsp; 🏁 ${compName}</span>
+      <div class="date-header" style="justify-content:space-between;align-items:center">
+        <span>📅 ${displayDate} &nbsp;·&nbsp; 🏁
+          <span class="comp-name-display" data-groupkey="${groupKey}" style="cursor:pointer;border-bottom:1px dashed rgba(0,212,255,0.4)" title="Click to rename">${displayName}</span>
+        </span>
         <button class="tool-btn clear-group-btn" style="font-size:0.55rem;padding:0.2rem 0.5rem;margin-left:1rem"
-          data-docids="${groupDocIds.join('|')}">🗑 Clear</button>
+          data-docids="${safeDocIds}">🗑 Clear</button>
       </div>
       <table class="score-table">
         <thead>
@@ -362,7 +380,34 @@ async function renderScores() {
 // Render on load
 renderScores();
 
-// Event delegation for clear buttons (works even after DOM is re-rendered)
+// Event delegation for rename + clear buttons
+document.getElementById('scoresContainer').addEventListener('click', async (e) => {
+  // Rename competition name
+  const nameSpan = e.target.closest('.comp-name-display');
+  if (nameSpan) {
+    const current = nameSpan.textContent.trim();
+    const newName = prompt('Rename this competition:', current);
+    if (!newName || newName === current) return;
+    // Update all pilots in this group
+    const groupKey = nameSpan.dataset.groupkey;
+    const groupPilots = [];
+    document.querySelectorAll(`[data-groupkey="${groupKey}"]`).forEach(el => {
+      // get docids from sibling clear button
+      const clearBtn = el.closest('.date-header').querySelector('.clear-group-btn');
+      if (clearBtn) groupPilots.push(...clearBtn.dataset.docids.split('|').filter(Boolean));
+    });
+    try {
+      const batch = window.db.batch();
+      groupPilots.forEach(id => {
+        batch.update(window.db.collection('scores').doc(id), { compName: newName });
+      });
+      await batch.commit();
+      nameSpan.textContent = newName;
+    } catch(err) { alert('Error renaming: ' + err.message); }
+    return;
+  }
+});
+
 document.getElementById('scoresContainer').addEventListener('click', async (e) => {
   const btn = e.target.closest('.clear-group-btn');
   if (!btn) return;
