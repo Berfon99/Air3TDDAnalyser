@@ -833,16 +833,37 @@ function analyze() {
   }
 
   // 2. Check flight did not exit goal cylinder after validly reaching it
-  // goalValidatedIdx = index where goal was reached AFTER all TPs
-  // Any earlier passage through the goal cylinder (before all TPs) is ignored
+  // Tolerance: pilot may exit if landing only (no altitude gain > 50m, max 1km from goal edge)
   if (goalPassed && goal && goalValidatedIdx !== -1) {
+    // Find first point outside goal after validation
+    let exitIdx = -1;
     for (let i = goalValidatedIdx + 1; i < igcPoints.length; i++) {
-      if (!inCyl(igcPoints[i], goal)) {
-        const exitTime = igcPoints[i].time;
+      if (!inCyl(igcPoints[i], goal)) { exitIdx = i; break; }
+    }
+    if (exitIdx !== -1) {
+      const altAtExit = igcPoints[exitIdx].alt;
+      let maxAltAfterExit = altAtExit;
+      let maxDistFromGoal = 0;
+
+      for (let i = exitIdx; i < igcPoints.length; i++) {
+        if (igcPoints[i].alt > maxAltAfterExit) maxAltAfterExit = igcPoints[i].alt;
+        const distFromCenter = haversineM(igcPoints[i].lat, igcPoints[i].lon, goal.lat, goal.lon);
+        const distFromEdge = Math.max(0, distFromCenter - goal.radius);
+        if (distFromEdge > maxDistFromGoal) maxDistFromGoal = distFromEdge;
+      }
+
+      const altGain = maxAltAfterExit - altAtExit;
+      const landingOk = altGain <= 50 && maxDistFromGoal <= 1000;
+
+      if (!landingOk) {
+        const exitTime = igcPoints[exitIdx].time;
         const eh = Math.floor(exitTime / 3600).toString().padStart(2,'0');
         const em = Math.floor((exitTime % 3600) / 60).toString().padStart(2,'0');
-        violations.push(`Flight exited the Goal cylinder at ${eh}:${em} UTC`);
-        break;
+        if (altGain > 50) {
+          violations.push(`Flight exited Goal cylinder at ${eh}:${em} UTC and gained ${Math.round(altGain)}m altitude (max 50m allowed for landing)`);
+        } else {
+          violations.push(`Flight exited Goal cylinder at ${eh}:${em} UTC and landed ${Math.round(maxDistFromGoal)}m beyond the cylinder edge (max 1000m allowed)`);
+        }
       }
     }
   }
