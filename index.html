@@ -206,20 +206,6 @@
   .value-xc    { color:var(--accent); }
 </style>
 <!-- Firebase -->
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
-<script>
-  const firebaseConfig = {
-    apiKey: "AIzaSyAo6MSWOQXVQuCuluk5hhJY36TGvNqc8L8",
-    authDomain: "air3tddanalyser.firebaseapp.com",
-    projectId: "air3tddanalyser",
-    storageBucket: "air3tddanalyser.firebasestorage.app",
-    messagingSenderId: "40508185051",
-    appId: "1:40508185051:web:6b7c9069e4d4f94e4f2ffe"
-  };
-  firebase.initializeApp(firebaseConfig);
-  window.db = firebase.firestore();
-</script>
 </head>
 <body>
 
@@ -397,6 +383,19 @@
   </div>
 </div>
 
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<script>
+  firebase.initializeApp({
+    apiKey: "AIzaSyAo6MSWOQXVQuCuluk5hhJY36TGvNqc8L8",
+    authDomain: "air3tddanalyser.firebaseapp.com",
+    projectId: "air3tddanalyser",
+    storageBucket: "air3tddanalyser.firebasestorage.app",
+    messagingSenderId: "40508185051",
+    appId: "1:40508185051:web:6b7c9069e4d4f94e4f2ffe"
+  });
+  window.db = firebase.firestore();
+</script>
 <script>
 // ── MAP ───────────────────────────────────────────────────────────────────────
 const map = L.map('map', {zoomControl:true}).setView([45.5, 6.5], 9);
