@@ -278,25 +278,27 @@ async function renderScores() {
       new Date(b.submittedAt||0) - new Date(a.submittedAt||0)
     )[0].compName || 'Unknown Competition';
 
-    // Best XContest score in this group (for rule of 3)
-    const bestXc = Math.max(0, ...pilots.map(p => parsePoints(p.xcPts) || 0));
+    // Reference XContest = best XC among pilots with the MOST trackPts
+    // Pilots with fewer trackPts have their XC capped at refXc
+    const maxTrackPts = Math.max(0, ...pilots.map(p => parsePoints(p.trackPts) || 0));
+    const topPilots   = pilots.filter(p => (parsePoints(p.trackPts) || 0) === maxTrackPts);
+    const refXc       = Math.max(0, ...topPilots.map(p => parsePoints(p.xcPts) || 0));
 
-    // Sort by total score desc within this group
+    function effectiveXc(p) {
+      const xc = parsePoints(p.xcPts) || 0;
+      const tr = parsePoints(p.trackPts) || 0;
+      // Cap XC to refXc if this pilot has fewer track points than the leader
+      return tr < maxTrackPts ? Math.min(xc, refXc) : xc;
+    }
+
+    // Sort by total score desc
     pilots.sort((a, b) => {
-      const xcA = parsePoints(a.xcPts) || 0;
-      const xcB = parsePoints(b.xcPts) || 0;
-      const compA = bestXc > 0 ? Math.round((xcA / bestXc) * 500) : 0;
-      const compB = bestXc > 0 ? Math.round((xcB / bestXc) * 500) : 0;
+      const compA = refXc > 0 ? Math.round((effectiveXc(a) / refXc) * 500) : 0;
+      const compB = refXc > 0 ? Math.round((effectiveXc(b) / refXc) * 500) : 0;
       const totalA = (parsePoints(a.trackPts) || 0) + compA;
       const totalB = (parsePoints(b.trackPts) || 0) + compB;
       return totalB - totalA;
     });
-
-    // Use real Firestore doc IDs for deletion
-    const groupDocIds = pilots.map(p => p._firestoreId || p.docId ||
-      ((p.compName || 'Unknown Competition') + '_' + p.name).toLowerCase().replace(/[^a-z0-9]+/g, '_')
-    );
-    const safeDocIds = groupDocIds.join('|');
 
     html += `<div class="date-group">
       <div class="date-header" style="justify-content:space-between;align-items:center">
@@ -323,26 +325,28 @@ async function renderScores() {
     pilots.forEach((p, i) => {
       const trackPts = parsePoints(p.trackPts);
       const xcPts    = parsePoints(p.xcPts);
+      const effXc    = effectiveXc(p);
+      const isCapped = xcPts !== null && effXc < xcPts;
       const submittedAt = p.submittedAt ? new Date(p.submittedAt).toLocaleString() : '';
 
-      // XContest raw points
+      // Col 1: XContest raw pts, show cap indicator if capped
       const xcCell = xcPts !== null
-        ? `<span class="pts-xc">${xcPts.toFixed(2)}</span>`
+        ? `<span class="pts-xc">${xcPts.toFixed(2)}</span>${isCapped ? `<br><span style="font-size:0.55rem;color:rgba(200,223,240,0.35)">→ capped ${effXc.toFixed(2)}</span>` : ''}`
         : `<span class="pts-na">—</span>`;
 
-      // Computed XC pts via rule of 3 (best = 500)
+      // Col 2: Computed XC pts using capped effective value
       let computedXc = null;
-      if (xcPts !== null && bestXc > 0) computedXc = Math.round((xcPts / bestXc) * 500);
+      if (xcPts !== null && refXc > 0) computedXc = Math.round((effXc / refXc) * 500);
       const computedCell = computedXc !== null
-        ? `<span class="pts-computed">${computedXc}</span>`
+        ? `<span class="pts-computed">${computedXc}</span>${isCapped ? ' <span style="font-size:0.5rem;color:rgba(255,180,0,0.5)" title="XContest score capped: fewer waypoints than leader">⚑</span>' : ''}`
         : `<span class="pts-na">—</span>`;
 
-      // Waypoint track points
+      // Col 3: Waypoint track points
       const trackCell = trackPts !== null
         ? `<span class="pts-track">${trackPts}</span>`
         : `<span class="pts-na">—</span>`;
 
-      // Total = computed XC + track
+      // Col 4: Total = computed XC + track
       let total = null;
       if (computedXc !== null && trackPts !== null) total = computedXc + trackPts;
       else if (computedXc !== null) total = computedXc;
@@ -373,79 +377,4 @@ async function renderScores() {
     html += `</tbody></table></div>`;
   }
 
-  container.innerHTML = html;
-}
 
-
-// Render on load
-renderScores();
-
-// Event delegation for rename + clear buttons
-document.getElementById('scoresContainer').addEventListener('click', async (e) => {
-  // Rename competition name
-  const nameSpan = e.target.closest('.comp-name-display');
-  if (nameSpan) {
-    const current = nameSpan.textContent.trim();
-    const newName = prompt('Rename this competition:', current);
-    if (!newName || newName === current) return;
-    // Update all pilots in this group
-    const groupKey = nameSpan.dataset.groupkey;
-    const groupPilots = [];
-    document.querySelectorAll(`[data-groupkey="${groupKey}"]`).forEach(el => {
-      // get docids from sibling clear button
-      const clearBtn = el.closest('.date-header').querySelector('.clear-group-btn');
-      if (clearBtn) groupPilots.push(...clearBtn.dataset.docids.split('|').filter(Boolean));
-    });
-    try {
-      const batch = window.db.batch();
-      groupPilots.forEach(id => {
-        batch.update(window.db.collection('scores').doc(id), { compName: newName });
-      });
-      await batch.commit();
-      nameSpan.textContent = newName;
-    } catch(err) { alert('Error renaming: ' + err.message); }
-    return;
-  }
-});
-
-document.getElementById('scoresContainer').addEventListener('click', async (e) => {
-  const btn = e.target.closest('.clear-group-btn');
-  if (!btn) return;
-  const docIds = btn.dataset.docids.split('|').filter(Boolean);
-  if (!docIds.length) return;
-  if (!confirm(`Delete ${docIds.length} score(s) for this competition? This cannot be undone.`)) return;
-  btn.textContent = '⏳';
-  btn.disabled = true;
-  try {
-    const batch = window.db.batch();
-    docIds.forEach(id => batch.delete(window.db.collection('scores').doc(id)));
-    await batch.commit();
-    renderScores();
-  } catch(err) {
-    alert('Error: ' + err.message);
-    btn.textContent = '🗑 Clear';
-    btn.disabled = false;
-  }
-});
-</script>
-<footer style="
-  text-align:center;
-  padding:1.5rem 2rem;
-  border-top:1px solid rgba(0,212,255,0.1);
-  margin-top:2rem;
-">
-  <a href="https://www.fly-air3.com/" target="_blank" style="
-    font-family:'Syne',sans-serif;
-    font-size:0.75rem;
-    font-weight:700;
-    letter-spacing:0.15em;
-    text-transform:uppercase;
-    color:rgba(200,223,240,0.3);
-    text-decoration:none;
-    transition:color 0.2s;
-  " onmouseover="this.style.color='#00d4ff'" onmouseout="this.style.color='rgba(200,223,240,0.3)'">
-    ⚡ Powered by Snowy
-  </a>
-</footer>
-</body>
-</html>
