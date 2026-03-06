@@ -246,7 +246,6 @@
         <div class="empty-state">No tasks yet</div>
       </div>
       <button class="btn-sm" id="taskNewBtn" style="width:100%">＋ New task (upload .xctsk)</button>
-      <input type="file" accept=".xctsk,.json" id="xctskInputChamp" style="display:none">
     </div>
 
     <!-- ── XCTASK (shown only when adding new task or no championship mode) ── -->
@@ -1204,7 +1203,7 @@ This will NOT delete submitted scores.`)) return;
 // New task button → show file picker
 document.getElementById('taskNewBtn').addEventListener('click', () => {
   document.getElementById('xctskSection').style.display = 'block';
-  document.getElementById('xctskInputChamp').click();
+  document.getElementById('xctskInput').click();
 });
 
 // ── RESTORE LAST TASK ON PAGE LOAD ───────────────────────────────────────────
@@ -1213,6 +1212,7 @@ loadChampionships();
 
 
 // Task restore from localStorage disabled — tasks now loaded from Firestore
+localStorage.removeItem('paratrace_last_task'); // clear any old cached task
 
 // ── SAVE TASK TO FIRESTORE ────────────────────────────────────────────────────
 async function saveTaskToFirestore(xctskJson) {
