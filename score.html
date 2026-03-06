@@ -228,7 +228,7 @@ async function renderScores(champId) {
     html += `<div class="date-group">
       <div class="date-header">
         <span>📅 ${displayDate} &nbsp;·&nbsp; 🏁
-          <span class="comp-name-edit" data-ids="${ids}" title="Click to rename">${displayName}</span>
+          <span class="comp-name-edit" data-ids="${ids}" data-task-id="${byRecent[0].taskId||''}" title="Click to rename">${displayName}</span>
         </span>
         <button class="tool-btn clear-btn" data-ids="${ids}">🗑 Clear</button>
       </div>
@@ -296,10 +296,28 @@ document.getElementById('scoresContainer').addEventListener('click', async e => 
     const newName = prompt('Rename this competition:', current);
     if (!newName || newName.trim() === current) return;
     const ids = nameEl.dataset.ids.split('|').filter(Boolean);
+    const taskId = nameEl.dataset.taskId || null;
     try {
       const batch = window.db.batch();
+      // Update all scores in this group
       ids.forEach(id => batch.update(window.db.collection('scores').doc(id), { compName: newName.trim() }));
       await batch.commit();
+      // Also update the task document so future submits use the new name
+      if (taskId) {
+        await window.db.collection('tasks').doc(taskId).update({ compName: newName.trim() });
+      } else {
+        // No taskId stored — find task by compKey from first score
+        try {
+          const snap = await window.db.collection('scores').doc(ids[0]).get();
+          const compKey = snap.data()?.compKey;
+          if (compKey) {
+            const taskSnap = await window.db.collection('tasks').get();
+            const taskDoc = taskSnap.docs.find(d => d.data().wpFingerprint &&
+              (compKey.split('||')[1] === d.data().wpFingerprint));
+            if (taskDoc) await taskDoc.ref.update({ compName: newName.trim() });
+          }
+        } catch(e) { /* non-critical */ }
+      }
       nameEl.textContent = newName.trim();
     } catch(err) { alert('Error renaming: ' + err.message); }
     return;
